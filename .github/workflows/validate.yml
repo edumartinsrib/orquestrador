@@ -1,0 +1,31 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate local build and templates
+        run: |
+          set -euo pipefail
+          chmod +x infra/scripts/*.sh sso-keycloak/entrypoint.sh
+          ./infra/scripts/validate-local.sh
+
+      - name: Validate Helm render and workflows
+        run: |
+          set -euo pipefail
+          ./infra/scripts/validate-extended-local.sh

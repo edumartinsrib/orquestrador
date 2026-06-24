@@ -1,0 +1,128 @@
+server:
+  enabled: true
+  image:
+    repository: temporalio/server
+    tag: ${TEMPORAL_SERVER_IMAGE_TAG}
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  config:
+    logLevel: "info"
+    persistence:
+      defaultStore: default
+      visibilityStore: visibility
+      numHistoryShards: 512
+      datastores:
+        default:
+          sql:
+            createDatabase: false
+            manageSchema: true
+            pluginName: postgres12_pgx
+            driverName: postgres12_pgx
+            databaseName: ${TEMPORAL_DB_NAME}
+            connectAddr: ${TEMPORAL_DB_HOST}:${TEMPORAL_DB_PORT}
+            connectProtocol: tcp
+            user: ${TEMPORAL_DB_USER}
+            existingSecret: temporal-db-secret
+            secretKey: password
+            maxConns: 20
+            maxIdleConns: 20
+            maxConnLifetime: 1h
+        visibility:
+          sql:
+            createDatabase: false
+            manageSchema: true
+            pluginName: postgres12_pgx
+            driverName: postgres12_pgx
+            databaseName: ${TEMPORAL_VISIBILITY_DB_NAME}
+            connectAddr: ${TEMPORAL_DB_HOST}:${TEMPORAL_DB_PORT}
+            connectProtocol: tcp
+            user: ${TEMPORAL_DB_USER}
+            existingSecret: temporal-db-secret
+            secretKey: password
+            maxConns: 10
+            maxIdleConns: 10
+            maxConnLifetime: 1h
+    metrics:
+      prometheus:
+        timerType: histogram
+        listenAddress: "0.0.0.0:9090"
+    namespaces:
+      create: true
+      namespace:
+        - name: default
+          retention: 7d
+  frontend:
+    service:
+      type: ClusterIP
+      port: 7233
+  history:
+    enabled: true
+  matching:
+    enabled: true
+  worker:
+    # Internal Temporal system worker from the official Helm chart.
+    # Business workflow workers for this project run as local Python processes.
+    enabled: true
+
+admintools:
+  enabled: false
+  image:
+    repository: temporalio/admin-tools
+    tag: ${TEMPORAL_ADMINTOOLS_IMAGE_TAG}
+    pullPolicy: IfNotPresent
+
+web:
+  enabled: true
+  image:
+    repository: temporalio/ui
+    tag: ${TEMPORAL_UI_IMAGE_TAG}
+    pullPolicy: IfNotPresent
+  replicaCount: 2
+  additionalEnvSecretName: temporal-ui-auth-secret
+  additionalEnv:
+    - name: TEMPORAL_ADDRESS
+      value: temporal-frontend.${TEMPORAL_NAMESPACE}.svc.cluster.local:7233
+    - name: TEMPORAL_UI_PORT
+      value: "8080"
+    - name: TEMPORAL_UI_ENABLED
+      value: "true"
+    - name: TEMPORAL_CLOUD_UI
+      value: "false"
+    - name: TEMPORAL_DEFAULT_NAMESPACE
+      value: default
+    - name: TEMPORAL_SHOW_TEMPORAL_SYSTEM_NAMESPACE
+      value: "false"
+    - name: TEMPORAL_AUTH_ENABLED
+      value: "true"
+    - name: TEMPORAL_AUTH_TYPE
+      value: oidc
+    - name: TEMPORAL_AUTH_PROVIDER_URL
+      value: ${TEMPORAL_AUTH_PROVIDER_URL}
+    - name: TEMPORAL_AUTH_ISSUER_URL
+      value: ${TEMPORAL_AUTH_ISSUER_URL}
+    - name: TEMPORAL_AUTH_CLIENT_ID
+      value: ${TEMPORAL_AUTH_CLIENT_ID}
+    - name: TEMPORAL_AUTH_CALLBACK_URL
+      value: ${TEMPORAL_UI_PUBLIC_URL}/auth/sso/callback
+    - name: TEMPORAL_AUTH_SCOPES
+      value: openid,email,profile
+  service:
+    type: ClusterIP
+    port: 8080
+  ingress:
+    enabled: true
+    className: alb
+    annotations:
+      alb.ingress.kubernetes.io/scheme: ${ALB_SCHEME}
+      alb.ingress.kubernetes.io/target-type: ip
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+      alb.ingress.kubernetes.io/certificate-arn: ${ALB_CERTIFICATE_ARN}
+      alb.ingress.kubernetes.io/healthcheck-path: /healthz
+      alb.ingress.kubernetes.io/success-codes: "200"
+    hosts:
+      - ${TEMPORAL_UI_HOST}
+    tls: []
+
+schema:
+  useHelmHooks: true
+  backoffLimit: 100

@@ -1,0 +1,138 @@
+name: build-and-deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  AWS_ACCOUNT_ID: ${{ vars.AWS_ACCOUNT_ID }}
+  EKS_CLUSTER_NAME: ${{ vars.EKS_CLUSTER_NAME }}
+  ECR_KEYCLOAK_REPOSITORY: ${{ vars.ECR_KEYCLOAK_REPOSITORY }}
+  TEMPORAL_HELM_CHART_VERSION: ${{ vars.TEMPORAL_HELM_CHART_VERSION || '1.2.0' }}
+  TEMPORAL_SERVER_IMAGE_TAG: ${{ vars.TEMPORAL_SERVER_IMAGE_TAG || '1.31.0' }}
+  TEMPORAL_ADMINTOOLS_IMAGE_TAG: ${{ vars.TEMPORAL_ADMINTOOLS_IMAGE_TAG || '1.31.0' }}
+  TEMPORAL_UI_IMAGE_TAG: ${{ vars.TEMPORAL_UI_IMAGE_TAG || '2.49.1' }}
+  KEYCLOAK_IMAGE_TAG: ${{ vars.KEYCLOAK_IMAGE_TAG || '26.6.3' }}
+  TEMPORAL_NAMESPACE: ${{ vars.TEMPORAL_NAMESPACE || 'temporal' }}
+  SSO_NAMESPACE: ${{ vars.SSO_NAMESPACE || 'temporal-sso' }}
+  TEMPORAL_DB_HOST: ${{ vars.TEMPORAL_DB_HOST }}
+  TEMPORAL_DB_PORT: ${{ vars.TEMPORAL_DB_PORT || '5432' }}
+  TEMPORAL_DB_NAME: ${{ vars.TEMPORAL_DB_NAME || 'temporal' }}
+  TEMPORAL_VISIBILITY_DB_NAME: ${{ vars.TEMPORAL_VISIBILITY_DB_NAME || 'temporal_visibility' }}
+  TEMPORAL_DB_USER: ${{ vars.TEMPORAL_DB_USER }}
+  TEMPORAL_UI_HOST: ${{ vars.TEMPORAL_UI_HOST }}
+  TEMPORAL_UI_PUBLIC_URL: ${{ vars.TEMPORAL_UI_PUBLIC_URL }}
+  TEMPORAL_AUTH_PROVIDER_URL: ${{ vars.TEMPORAL_AUTH_PROVIDER_URL }}
+  TEMPORAL_AUTH_ISSUER_URL: ${{ vars.TEMPORAL_AUTH_ISSUER_URL }}
+  TEMPORAL_AUTH_CLIENT_ID: ${{ vars.TEMPORAL_AUTH_CLIENT_ID || 'temporal-ui' }}
+  TEMPORAL_INITIAL_ADMIN_USERNAME: ${{ vars.TEMPORAL_INITIAL_ADMIN_USERNAME || 'temporal.admin' }}
+  TEMPORAL_INITIAL_ADMIN_EMAIL: ${{ vars.TEMPORAL_INITIAL_ADMIN_EMAIL }}
+  DEPLOY_KEYCLOAK: ${{ vars.DEPLOY_KEYCLOAK || 'true' }}
+  KEYCLOAK_PUBLIC_HOSTNAME: ${{ vars.KEYCLOAK_PUBLIC_HOSTNAME }}
+  KEYCLOAK_PUBLIC_URL: ${{ vars.KEYCLOAK_PUBLIC_URL }}
+  KEYCLOAK_DB_HOST: ${{ vars.KEYCLOAK_DB_HOST }}
+  KEYCLOAK_DB_PORT: ${{ vars.KEYCLOAK_DB_PORT || '5432' }}
+  KEYCLOAK_DB_NAME: ${{ vars.KEYCLOAK_DB_NAME || 'keycloak' }}
+  KEYCLOAK_DB_USER: ${{ vars.KEYCLOAK_DB_USER }}
+  KEYCLOAK_ADMIN_USERNAME: ${{ vars.KEYCLOAK_ADMIN_USERNAME || 'admin' }}
+  ALB_CERTIFICATE_ARN: ${{ vars.ALB_CERTIFICATE_ARN }}
+  ALB_SCHEME: ${{ vars.ALB_SCHEME || 'internet-facing' }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate project before AWS access
+        run: |
+          set -euo pipefail
+          chmod +x infra/scripts/*.sh sso-keycloak/entrypoint.sh
+          ./infra/scripts/validate-local.sh
+          ./infra/scripts/validate-extended-local.sh
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_TO_ASSUME }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        if: env.DEPLOY_KEYCLOAK == 'true'
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Ensure ECR repositories
+        if: env.DEPLOY_KEYCLOAK == 'true'
+        run: |
+          set -euo pipefail
+          aws ecr describe-repositories \
+            --region "$AWS_REGION" \
+            --repository-names "$ECR_KEYCLOAK_REPOSITORY" >/dev/null 2>&1 \
+            || aws ecr create-repository \
+              --region "$AWS_REGION" \
+              --repository-name "$ECR_KEYCLOAK_REPOSITORY" \
+              --image-scanning-configuration scanOnPush=true \
+              --encryption-configuration encryptionType=AES256 >/dev/null
+
+      - name: Build and push Keycloak image
+        if: env.DEPLOY_KEYCLOAK == 'true'
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          KEYCLOAK_IMAGE="$ECR_REGISTRY/$ECR_KEYCLOAK_REPOSITORY:$IMAGE_TAG"
+
+          docker build \
+            --build-arg KEYCLOAK_IMAGE_TAG="$KEYCLOAK_IMAGE_TAG" \
+            -t "$KEYCLOAK_IMAGE" ./sso-keycloak
+          docker push "$KEYCLOAK_IMAGE"
+
+          {
+            echo "KEYCLOAK_IMAGE=$KEYCLOAK_IMAGE"
+          } >> "$GITHUB_ENV"
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "$AWS_REGION" \
+            --name "$EKS_CLUSTER_NAME"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy to EKS
+        env:
+          TEMPORAL_DB_PASSWORD: ${{ secrets.TEMPORAL_DB_PASSWORD }}
+          TEMPORAL_AUTH_CLIENT_SECRET: ${{ secrets.TEMPORAL_AUTH_CLIENT_SECRET }}
+          TEMPORAL_INITIAL_ADMIN_PASSWORD: ${{ secrets.TEMPORAL_INITIAL_ADMIN_PASSWORD }}
+          KEYCLOAK_DB_PASSWORD: ${{ secrets.KEYCLOAK_DB_PASSWORD }}
+          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          chmod +x infra/scripts/*.sh
+          ./infra/scripts/deploy.sh
+
+      - name: Smoke test deployment
+        env:
+          TEMPORAL_DB_PASSWORD: ${{ secrets.TEMPORAL_DB_PASSWORD }}
+          TEMPORAL_AUTH_CLIENT_SECRET: ${{ secrets.TEMPORAL_AUTH_CLIENT_SECRET }}
+          TEMPORAL_INITIAL_ADMIN_PASSWORD: ${{ secrets.TEMPORAL_INITIAL_ADMIN_PASSWORD }}
+          KEYCLOAK_DB_PASSWORD: ${{ secrets.KEYCLOAK_DB_PASSWORD }}
+          KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
+          SMOKE_PUBLIC_HTTP_CHECKS: ${{ vars.SMOKE_PUBLIC_HTTP_CHECKS || 'true' }}
+        run: |
+          set -euo pipefail
+          ./infra/scripts/smoke-test.sh

@@ -1,0 +1,81 @@
+{
+  "realm": "temporal",
+  "enabled": true,
+  "displayName": "Temporal",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      {
+        "name": "temporal-admin",
+        "description": "Administrative users for Temporal UI"
+      },
+      {
+        "name": "temporal-viewer",
+        "description": "Read-only users for Temporal UI"
+      }
+    ]
+  },
+  "users": [
+    {
+      "username": "${TEMPORAL_INITIAL_ADMIN_USERNAME}",
+      "email": "${TEMPORAL_INITIAL_ADMIN_EMAIL}",
+      "emailVerified": true,
+      "enabled": true,
+      "firstName": "Temporal",
+      "lastName": "Admin",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${TEMPORAL_INITIAL_ADMIN_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "temporal-admin"
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "${TEMPORAL_AUTH_CLIENT_ID}",
+      "name": "Temporal UI",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${TEMPORAL_AUTH_CLIENT_SECRET}",
+      "redirectUris": [
+        "${TEMPORAL_UI_PUBLIC_URL}/auth/sso/callback"
+      ],
+      "webOrigins": [
+        "${TEMPORAL_UI_PUBLIC_URL}"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "${TEMPORAL_UI_PUBLIC_URL}/*"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    }
+  ]
+}

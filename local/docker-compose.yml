@@ -1,0 +1,170 @@
+services:
+  temporal-postgresql:
+    image: postgres:${POSTGRESQL_VERSION}
+    environment:
+      POSTGRES_USER: ${TEMPORAL_DB_USER}
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPORAL_DB_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    volumes:
+      - temporal-postgresql-data:/var/lib/postgresql/data
+    networks:
+      - temporal-local
+
+  keycloak-postgresql:
+    image: postgres:${POSTGRESQL_VERSION}
+    environment:
+      POSTGRES_USER: ${KEYCLOAK_DB_USER}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${KEYCLOAK_DB_USER} -d ${KEYCLOAK_DB_NAME}"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 10s
+    volumes:
+      - keycloak-postgresql-data:/var/lib/postgresql/data
+    networks:
+      - temporal-local
+
+  temporal-admin-tools:
+    image: temporalio/admin-tools:${TEMPORAL_ADMINTOOLS_VERSION}
+    depends_on:
+      temporal-postgresql:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${TEMPORAL_DB_USER}
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD}
+      POSTGRES_SEEDS: temporal-postgresql
+      SQL_PASSWORD: ${TEMPORAL_DB_PASSWORD}
+    volumes:
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh"]
+    command: /scripts/setup-postgres.sh
+    networks:
+      - temporal-local
+
+  temporal:
+    image: temporalio/server:${TEMPORAL_VERSION}
+    depends_on:
+      temporal-admin-tools:
+        condition: service_completed_successfully
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: ${TEMPORAL_DB_USER}
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD}
+      POSTGRES_SEEDS: temporal-postgresql
+      BIND_ON_IP: 0.0.0.0
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development-sql.yaml
+    ports:
+      - "7233:7233"
+    volumes:
+      - ./dynamicconfig:/etc/temporal/config/dynamicconfig:ro
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "7233"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    networks:
+      - temporal-local
+
+  temporal-create-namespace:
+    image: temporalio/admin-tools:${TEMPORAL_ADMINTOOLS_VERSION}
+    depends_on:
+      temporal:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      DEFAULT_NAMESPACE: ${TEMPORAL_NAMESPACE}
+    volumes:
+      - ./scripts:/scripts:ro
+    entrypoint: ["/bin/sh"]
+    command: /scripts/create-namespace.sh
+    networks:
+      - temporal-local
+
+  keycloak:
+    build:
+      context: ../sso-keycloak
+      args:
+        KEYCLOAK_IMAGE_TAG: ${KEYCLOAK_IMAGE_TAG}
+    depends_on:
+      keycloak-postgresql:
+        condition: service_healthy
+    command:
+      - start
+      - --optimized
+      - --import-realm
+      - --http-enabled=true
+      - --hostname=${KEYCLOAK_PUBLIC_URL}
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-postgresql:5432/${KEYCLOAK_DB_NAME}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      KC_HEALTH_ENABLED: "true"
+      KC_METRICS_ENABLED: "true"
+      TEMPORAL_UI_PUBLIC_URL: ${TEMPORAL_UI_PUBLIC_URL}
+      TEMPORAL_AUTH_CLIENT_ID: ${TEMPORAL_AUTH_CLIENT_ID}
+      TEMPORAL_AUTH_CLIENT_SECRET: ${TEMPORAL_AUTH_CLIENT_SECRET}
+      TEMPORAL_INITIAL_ADMIN_USERNAME: ${TEMPORAL_INITIAL_ADMIN_USERNAME}
+      TEMPORAL_INITIAL_ADMIN_EMAIL: ${TEMPORAL_INITIAL_ADMIN_EMAIL}
+      TEMPORAL_INITIAL_ADMIN_PASSWORD: ${TEMPORAL_INITIAL_ADMIN_PASSWORD}
+    ports:
+      - "8081:8080"
+      - "9001:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && grep -q '200' <&3"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    networks:
+      - temporal-local
+
+  temporal-ui:
+    image: temporalio/ui:${TEMPORAL_UI_VERSION}
+    depends_on:
+      temporal:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_UI_PORT: 8080
+      TEMPORAL_UI_ENABLED: "true"
+      TEMPORAL_CLOUD_UI: "false"
+      TEMPORAL_DEFAULT_NAMESPACE: ${TEMPORAL_NAMESPACE}
+      TEMPORAL_AUTH_ENABLED: "true"
+      TEMPORAL_AUTH_TYPE: oidc
+      TEMPORAL_AUTH_PROVIDER_URL: ${KEYCLOAK_PUBLIC_URL}/realms/temporal
+      TEMPORAL_AUTH_ISSUER_URL: ${KEYCLOAK_PUBLIC_URL}/realms/temporal
+      TEMPORAL_AUTH_CLIENT_ID: ${TEMPORAL_AUTH_CLIENT_ID}
+      TEMPORAL_AUTH_CLIENT_SECRET: ${TEMPORAL_AUTH_CLIENT_SECRET}
+      TEMPORAL_AUTH_CALLBACK_URL: http://localhost:8080/auth/sso/callback
+      TEMPORAL_AUTH_SCOPES: openid,email,profile
+    extra_hosts:
+      - "keycloak.localhost:host-gateway"
+    ports:
+      - "8080:8080"
+    networks:
+      - temporal-local
+
+networks:
+  temporal-local:
+    driver: bridge
+
+volumes:
+  temporal-postgresql-data:
+  keycloak-postgresql-data:
