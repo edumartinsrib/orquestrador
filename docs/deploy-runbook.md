@@ -107,9 +107,11 @@ docker push "$KEYCLOAK_IMAGE"
 
 Se `DEPLOY_KEYCLOAK=false`, pule o ECR e a imagem do Keycloak; o deploy usa apenas o OIDC externo configurado em `TEMPORAL_AUTH_*`.
 
-## 7. Deploy automatico
+## 7. Deploy por GitHub Actions
 
-Depois do primeiro deploy, pushes em `main` disparam `.github/workflows/deploy.yml`.
+Por enquanto, `.github/workflows/deploy.yml` roda somente por `workflow_dispatch`, para evitar deploy acidental na AWS/EKS. Pushes em `main` rodam apenas a workflow de validacao.
+
+Quando quiser liberar deploy automatico, adicione novamente o evento `push` na workflow de deploy depois de configurar vars/secrets e validar o primeiro deploy manual.
 
 ## 8. Validacao em runtime
 

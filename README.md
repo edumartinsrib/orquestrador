@@ -8,7 +8,7 @@ Projeto base para rodar Temporal em modo self-hosted/open source no Kubernetes d
 - `sso-keycloak`: imagem Keycloak com import de realm OIDC para autenticar o Temporal UI.
 - `infra/k8s`: manifests Kubernetes renderizados por variaveis de ambiente.
 - `worker`: worker Temporal Python para maquina local, com tutorial de instalacao no Windows.
-- `.github/workflows/deploy.yml`: pipeline para build, push no ECR e deploy no EKS.
+- `.github/workflows/deploy.yml`: pipeline manual para build, push no ECR e deploy no EKS.
 - `.github/workflows/validate.yml`: validacao sem deploy para pull requests e push em `main`.
 
 ## Arquitetura
@@ -157,13 +157,15 @@ Configure tambem estes repository secrets se `DEPLOY_KEYCLOAK=true`:
 - `KEYCLOAK_DB_PASSWORD`
 - `KEYCLOAK_ADMIN_PASSWORD`
 
-Ao fazer push em `main`, a workflow:
+Quando executada manualmente, a workflow `.github/workflows/deploy.yml`:
 
 1. assume a role AWS por OIDC;
 2. cria o repositorio ECR do Keycloak se `DEPLOY_KEYCLOAK=true`;
 3. builda e publica a imagem `sso-keycloak` se `DEPLOY_KEYCLOAK=true`;
 4. atualiza o kubeconfig para o EKS;
 5. executa `infra/scripts/deploy.sh`.
+
+Por enquanto, push em `main` roda apenas validacao. O deploy para AWS/EKS fica manual por `workflow_dispatch`.
 
 ## Validacao local
 
