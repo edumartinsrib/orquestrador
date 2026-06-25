@@ -6,6 +6,7 @@ Projeto base para rodar Temporal em modo self-hosted/open source na DevConsole d
 
 - `Dockerfile`: imagem principal para DevConsole, com Temporal Server, Temporal UI, CLI e setup de schema.
 - `devconsole/start.sh`: bootstrap do container principal, lendo `DATABASE_URL` ou `TEMPORAL_DATABASE_URL`.
+- `docs/instalacao-e-uso.md`: guia completo para instalar, configurar e usar o projeto.
 - `docs/devconsole.md`: passo a passo de variaveis e operacao na DevConsole.
 - `sso-keycloak`: imagem Keycloak com import de realm OIDC para autenticar o Temporal UI.
 - `worker`: worker Temporal Python para maquina local, com tutorial de instalacao no Windows.
