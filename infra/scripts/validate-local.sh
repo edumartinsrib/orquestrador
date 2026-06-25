@@ -8,7 +8,7 @@ render="$repo_root/infra/scripts/render-env.sh"
 mkdir -p "$generated_dir"
 
 echo "==> Shell script syntax"
-for script in "$repo_root"/infra/scripts/*.sh "$repo_root"/local/scripts/*.sh "$repo_root"/sso-keycloak/*.sh; do
+for script in "$repo_root"/infra/scripts/*.sh "$repo_root"/local/scripts/*.sh "$repo_root"/sso-keycloak/*.sh "$repo_root"/devconsole/*.sh; do
   bash -n "$script"
 done
 
@@ -46,6 +46,7 @@ if command -v python3 >/dev/null 2>&1; then
   python3 -m json.tool "$repo_root/infra/aws/github-actions-policy.json" >/dev/null
   python3 -m json.tool "$generated_dir/github-oidc-trust-policy.json" >/dev/null
   python3 -m json.tool "$repo_root/sso-keycloak/realm-template.json" >/dev/null
+  python3 -m py_compile "$repo_root/devconsole/parse_database_url.py"
   python3 -m py_compile "$repo_root/local/scripts/local-sso-browser-test.py"
   echo "JSON/Python parse ok"
 else
@@ -55,6 +56,9 @@ fi
 if command -v docker >/dev/null 2>&1; then
   docker compose --env-file "$repo_root/local/.env.local" -f "$repo_root/local/docker-compose.yml" config >/dev/null
   echo "==> Docker builds"
+  docker build -t temporal-devconsole:validation "$repo_root"
+  docker run --rm --entrypoint bash temporal-devconsole:validation \
+    -lc '/opt/devconsole/parse_database_url.py default "postgresql://temporal:p%40ss@db.example:5432/temporal?sslmode=require" | grep -q "SQL_TLS=true"'
   docker build -t temporal-keycloak:validation "$repo_root/sso-keycloak"
   docker run --rm \
     -e TEMPORAL_UI_PUBLIC_URL=https://temporal.example.com \

@@ -1,42 +1,58 @@
 # Orquestrador Temporal OSS
 
-Projeto base para rodar Temporal em modo self-hosted/open source no Kubernetes da AWS (EKS), com SSO OIDC usando Keycloak, CI/CD por GitHub Actions, imagem customizada do Keycloak em ECR e worker Python pronto para rodar em maquina local.
+Projeto base para rodar Temporal em modo self-hosted/open source na DevConsole do empregador, usando o `Dockerfile` da raiz como runtime principal. A conexao com PostgreSQL/RDS entra por variaveis de ambiente no ambiente principal. O worker Python de negocio continua fora desse ambiente.
 
 ## O que este repo entrega
 
-- `infra/temporal`: valores Helm para instalar Temporal OSS no EKS usando PostgreSQL externo.
+- `Dockerfile`: imagem principal para DevConsole, com Temporal Server, Temporal UI, CLI e setup de schema.
+- `devconsole/start.sh`: bootstrap do container principal, lendo `DATABASE_URL` ou `TEMPORAL_DATABASE_URL`.
+- `docs/devconsole.md`: passo a passo de variaveis e operacao na DevConsole.
 - `sso-keycloak`: imagem Keycloak com import de realm OIDC para autenticar o Temporal UI.
-- `infra/k8s`: manifests Kubernetes renderizados por variaveis de ambiente.
 - `worker`: worker Temporal Python para maquina local, com tutorial de instalacao no Windows.
-- `.github/workflows/deploy.yml`: pipeline manual para build, push no ECR e deploy no EKS.
+- `infra/temporal` e `infra/k8s`: caminho legado/alternativo para instalar Temporal OSS no EKS.
+- `.github/workflows/deploy.yml`: pipeline manual/opcional para build, push no ECR e deploy no EKS.
 - `.github/workflows/validate.yml`: validacao sem deploy para pull requests e push em `main`.
 
 ## Arquitetura
 
 ```text
-GitHub Actions
-  -> assume role AWS via OIDC
-  -> build Keycloak
-  -> push ECR
-  -> kubectl/helm no EKS
-
-EKS
-  temporal namespace
-    - Temporal frontend/history/matching e system worker interno via Helm
-    - Temporal UI com OIDC habilitado
-  temporal-sso namespace
-    - Keycloak OSS como IdP OIDC
+DevConsole
+  -> build do Dockerfile da raiz
+  -> start.sh prepara schema, inicia Temporal Server e Temporal UI
+  -> variaveis do ambiente principal definem DATABASE_URL e autenticacao
 
 Maquina local/Windows
-  - worker Python conectado ao Temporal frontend por rede privada, VPN/Tailscale ou port-forward administrativo
+  - worker Python conectado ao Temporal frontend por rede privada/VPN/Tailscale/PrivateLink
 
 RDS PostgreSQL
   - temporal
   - temporal_visibility
-  - keycloak, somente se DEPLOY_KEYCLOAK=true
 ```
 
-## Pre-requisitos na AWS
+## Deploy principal na DevConsole
+
+A DevConsole deve construir a imagem a partir do `Dockerfile` da raiz. Configure no ambiente principal pelo menos:
+
+- `DATABASE_URL=postgresql://usuario:senha@host:5432/temporal`
+- `TEMPORAL_VISIBILITY_DB_NAME=temporal_visibility`, se nao usar `TEMPORAL_VISIBILITY_DATABASE_URL`
+- `TEMPORAL_UI_PUBLIC_URL=https://temporal.example.com`
+- `TEMPORAL_NAMESPACE=default`
+
+Se o RDS exigir TLS, use `?sslmode=require` na URL. O container tambem aceita as variaveis separadas `TEMPORAL_DB_HOST`, `TEMPORAL_DB_PORT`, `TEMPORAL_DB_NAME`, `TEMPORAL_DB_USER` e `TEMPORAL_DB_PASSWORD`.
+
+Detalhes completos ficam em [docs/devconsole.md](docs/devconsole.md).
+
+Para validar o build localmente:
+
+```bash
+make devconsole-build
+```
+
+## Caminho legado/opcional EKS
+
+Os arquivos de EKS/Helm continuam no repo para ambientes que ainda precisem desse modelo, mas nao sao o runtime principal da DevConsole.
+
+### Pre-requisitos na AWS
 
 1. Um cluster EKS existente.
 2. AWS Load Balancer Controller instalado no cluster.
@@ -48,7 +64,7 @@ RDS PostgreSQL
 5. Role IAM para GitHub Actions com permissao para ECR, EKS e STS OIDC.
 6. Se `DEPLOY_KEYCLOAK=true`, repositorio ECR para a imagem customizada do Keycloak, ou permissao para a pipeline cria-lo.
 
-## Deploy manual
+### Deploy manual no EKS
 
 Se ainda nao criou ECR/IAM para o CI, rode primeiro o bootstrap:
 
@@ -104,7 +120,7 @@ Detalhes do bootstrap AWS ficam em [infra/aws/README.md](infra/aws/README.md).
 Detalhes da configuracao do GitHub Actions ficam em [docs/github-actions-setup.md](docs/github-actions-setup.md).
 O passo a passo operacional completo fica em [docs/deploy-runbook.md](docs/deploy-runbook.md).
 
-## Deploy por CI/CD
+### Deploy por CI/CD no EKS
 
 Configure estes repository variables no GitHub:
 
@@ -112,6 +128,7 @@ Configure estes repository variables no GitHub:
 - `AWS_ACCOUNT_ID`
 - `AWS_ROLE_TO_ASSUME`
 - `EKS_CLUSTER_NAME`
+- `ENABLE_AWS_DEPLOY`
 - `TEMPORAL_HELM_CHART_VERSION`
 - `TEMPORAL_SERVER_IMAGE_TAG`
 - `TEMPORAL_ADMINTOOLS_IMAGE_TAG`
@@ -157,15 +174,15 @@ Configure tambem estes repository secrets se `DEPLOY_KEYCLOAK=true`:
 - `KEYCLOAK_DB_PASSWORD`
 - `KEYCLOAK_ADMIN_PASSWORD`
 
-Quando executada manualmente, a workflow `.github/workflows/deploy.yml`:
+A workflow `.github/workflows/deploy.yml` pode ser executada manualmente por `workflow_dispatch`. Em `push` na `main`, ela so executa deploy quando a repository variable `ENABLE_AWS_DEPLOY=true`; mantenha `false` enquanto estiver testando apenas localmente.
+
+Quando habilitada, a workflow:
 
 1. assume a role AWS por OIDC;
 2. cria o repositorio ECR do Keycloak se `DEPLOY_KEYCLOAK=true`;
 3. builda e publica a imagem `sso-keycloak` se `DEPLOY_KEYCLOAK=true`;
 4. atualiza o kubeconfig para o EKS;
 5. executa `infra/scripts/deploy.sh`.
-
-Por enquanto, push em `main` roda apenas validacao. O deploy para AWS/EKS fica manual por `workflow_dispatch`.
 
 ## Validacao local
 
@@ -182,7 +199,7 @@ Ou, diretamente:
 ./infra/scripts/validate-extended-local.sh
 ```
 
-O primeiro script valida o worker Python, renderizacao dos templates, JSON/YAML e build da imagem Docker do Keycloak quando Docker estiver disponivel. O segundo renderiza o chart Helm oficial do Temporal via Docker, roda actionlint nos workflows e verifica que variaveis sensiveis em Deployments usam Kubernetes Secrets.
+O primeiro script valida o worker Python, renderizacao dos templates, JSON/YAML e build das imagens Docker da DevConsole e do Keycloak quando Docker estiver disponivel. O segundo renderiza o chart Helm oficial do Temporal via Docker, roda actionlint nos workflows e verifica que variaveis sensiveis em Deployments usam Kubernetes Secrets.
 
 Para testar o stack inteiro sem AWS:
 
@@ -212,7 +229,7 @@ Esse script verifica rollouts no Kubernetes e, por padrao, os endpoints publicos
 
 ## Seguranca importante
 
-O SSO OIDC deste projeto protege o Temporal Web UI. O endpoint gRPC do Temporal (`:7233`) deve continuar privado dentro da VPC/cluster, ou ser exposto somente com mTLS, VPN, Tailscale, PrivateLink ou uma camada de autorizacao propria. Workers locais no Windows devem preferir VPN/Tailscale ou `kubectl port-forward` para operacao administrativa.
+O SSO OIDC deste projeto protege o Temporal Web UI. O endpoint gRPC do Temporal (`:7233`) deve continuar privado dentro da VPC/ambiente DevConsole, ou ser exposto somente com mTLS, VPN, Tailscale, PrivateLink ou uma camada de autorizacao propria. Workers locais no Windows devem preferir VPN/Tailscale, endpoint privado da DevConsole ou `kubectl port-forward` quando estiverem usando o caminho legado EKS.
 
 ## Referencias oficiais usadas
 

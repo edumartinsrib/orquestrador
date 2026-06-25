@@ -1,6 +1,6 @@
 # Worker Temporal Python Local
 
-Worker de exemplo em Python para rodar em uma maquina local, inclusive Windows, conectado ao Temporal local ou ao Temporal hospedado no EKS.
+Worker de exemplo em Python para rodar em uma maquina local, inclusive Windows, conectado ao Temporal local, ao Temporal hospedado na DevConsole ou ao caminho legado no EKS.
 
 Este worker nao e implantado no Kubernetes. Ele escuta a task queue configurada em `TEMPORAL_TASK_QUEUE` e executa o workflow de exemplo `GreetingWorkflow`.
 
@@ -119,9 +119,11 @@ Para escolher outro local de logs:
   -LogDirectory "C:\TemporalPythonWorker\logs"
 ```
 
-## Conectar ao Temporal no EKS
+## Conectar ao Temporal remoto
 
-O endpoint gRPC do Temporal deve ficar privado. Para uma maquina local acessar o Temporal no EKS, use uma rede privada como VPN, Tailscale, Direct Connect, ou um `kubectl port-forward` administrativo:
+O endpoint gRPC do Temporal deve ficar privado. Para uma maquina local acessar o Temporal na DevConsole, use o endpoint privado fornecido pela plataforma, VPN, Tailscale, Direct Connect ou PrivateLink.
+
+No caminho legado EKS, um `kubectl port-forward` administrativo tambem pode ser usado:
 
 ```powershell
 kubectl -n temporal port-forward svc/temporal-frontend 7233:7233

@@ -2,18 +2,20 @@
 
 ## Decisoes principais
 
-1. Temporal roda pelo Helm Chart oficial `temporalio/helm-charts`.
-2. O banco nao roda dentro do chart. Use PostgreSQL externo, como RDS, para `temporal` e `temporal_visibility`.
-3. SSO fica no Temporal UI via OIDC. O provedor de identidade padrao deste repo e Keycloak OSS.
-4. Workers rodam separados do servidor Temporal, fora do Kubernetes. O scaffold inclui um worker Python para maquina local/Windows.
-5. A API gRPC do Temporal nao deve ser publicada diretamente na internet sem controles adicionais.
+1. O runtime principal roda na DevConsole por meio do `Dockerfile` da raiz.
+2. O container principal inicia Temporal Server e Temporal UI no mesmo ambiente.
+3. O banco nao roda dentro do container. Use PostgreSQL externo, como RDS, para `temporal` e `temporal_visibility`.
+4. A conexao do banco entra por `DATABASE_URL`/`TEMPORAL_DATABASE_URL` ou pelas variaveis `TEMPORAL_DB_*`.
+5. SSO fica no Temporal UI via OIDC. Keycloak permanece disponivel como IdP opcional/legado.
+6. Workers rodam separados do servidor Temporal, fora da DevConsole. O scaffold inclui um worker Python para maquina local/Windows.
+7. A API gRPC do Temporal nao deve ser publicada diretamente na internet sem controles adicionais.
 
 ## Fluxo de autenticacao
 
 ```text
-Usuario -> ALB HTTPS -> Temporal UI -> Keycloak OIDC -> Temporal UI session
-Temporal UI -> Temporal frontend gRPC interno -> Temporal Server
-Worker Python local -> rede privada/VPN/Tailscale/port-forward -> Temporal frontend gRPC -> Task Queue
+Usuario -> DevConsole HTTPS -> Temporal UI -> OIDC opcional -> Temporal UI session
+Temporal UI -> Temporal frontend gRPC local no container -> Temporal Server
+Worker Python externo -> rede privada/VPN/Tailscale/PrivateLink -> Temporal frontend gRPC -> Task Queue
 ```
 
 ## Limite do SSO no Temporal OSS

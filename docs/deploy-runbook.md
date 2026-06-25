@@ -1,6 +1,6 @@
-# Runbook de deploy
+# Runbook de deploy EKS
 
-Este e o fluxo recomendado para sair de uma pasta nova ate Temporal OSS com SSO no EKS.
+Este e o fluxo legado/opcional para Temporal OSS com SSO no EKS. O runtime principal do projeto agora e a DevConsole usando o `Dockerfile` da raiz; veja [docs/devconsole.md](devconsole.md).
 
 ## 1. Preencher `.env`
 
@@ -109,9 +109,9 @@ Se `DEPLOY_KEYCLOAK=false`, pule o ECR e a imagem do Keycloak; o deploy usa apen
 
 ## 7. Deploy por GitHub Actions
 
-Por enquanto, `.github/workflows/deploy.yml` roda somente por `workflow_dispatch`, para evitar deploy acidental na AWS/EKS. Pushes em `main` rodam apenas a workflow de validacao.
+`.github/workflows/deploy.yml` roda manualmente por `workflow_dispatch` e tambem escuta pushes em `main`.
 
-Quando quiser liberar deploy automatico, adicione novamente o evento `push` na workflow de deploy depois de configurar vars/secrets e validar o primeiro deploy manual.
+Para evitar deploy acidental durante testes locais, o job de deploy so roda em push quando a repository variable `ENABLE_AWS_DEPLOY=true`. Mantenha `ENABLE_AWS_DEPLOY=false` ate configurar vars/secrets e validar o primeiro deploy manual.
 
 ## 8. Validacao em runtime
 

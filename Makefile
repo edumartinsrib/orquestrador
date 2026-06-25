@@ -14,6 +14,7 @@ help:
 		'  local-full      Start stack and run local tests' \
 		'  local-down      Stop local stack' \
 		'  local-clean     Stop local stack and remove volumes' \
+		'  devconsole-build Build the main DevConsole Docker image' \
 		'  aws-preflight   Validate AWS bootstrap inputs without AWS writes' \
 		'  deploy-preflight Validate full deploy .env without external calls'
 
@@ -51,6 +52,10 @@ local-down:
 .PHONY: local-clean
 local-clean:
 	./local/scripts/local-down.sh --volumes
+
+.PHONY: devconsole-build
+devconsole-build:
+	docker build -t temporal-devconsole:local .
 
 .PHONY: aws-preflight
 aws-preflight:

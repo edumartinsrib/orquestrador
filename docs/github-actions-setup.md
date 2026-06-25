@@ -17,6 +17,7 @@ O script usa `GITHUB_REPOSITORY=owner/repo` para saber qual repositorio configur
 ## O que o script envia como variable
 
 - Dados AWS/EKS.
+- Chave `ENABLE_AWS_DEPLOY`, que habilita deploy automatico em push quando definida como `true`.
 - Versoes pinadas do Helm Chart do Temporal e das imagens Temporal.
 - Hostnames publicos.
 - Configuracao OIDC do Temporal UI.
@@ -34,6 +35,8 @@ Se `DEPLOY_KEYCLOAK=true`, tambem envia:
 - `KEYCLOAK_ADMIN_PASSWORD`
 
 O script recusa valores de exemplo como `replace-me`, `example.com`, `owner/repo` e `123456789012`.
+
+Mantenha `ENABLE_AWS_DEPLOY=false` durante testes locais. Depois do primeiro deploy manual validado, altere a repository variable para `true` se quiser que pushes em `main` disparem deploy automaticamente.
 
 ## Requisitos
 
